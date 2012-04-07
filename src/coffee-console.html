@@ -88,8 +88,8 @@ function output(data, isError) {
 
     if (isError){
         output.className = 'error'
-    }
-    if (/^(undefined|null)$/.test(result)){
+        output.innerText = data || 'Mysterious error'
+    } else if (/^(undefined|null)$/.test(result)){
         output.className = 'null'
     }
 
@@ -139,7 +139,6 @@ function cleanUp(str){
 
 function captureConsole(code){
     var captureFn = function(){
-
         try {
 
             var r = eval("##CODE##")
@@ -150,7 +149,7 @@ function captureConsole(code){
 
             return [messages, r]
         } catch(err) {
-            return [[], 'here'+err.message]
+            return err
         }
     }
     return '(' + captureFn.toString().replace('##CODE##', cleanUp(code)) + ')()'
