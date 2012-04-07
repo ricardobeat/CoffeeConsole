@@ -123,7 +123,6 @@ chrome.devtools.inspectedWindow.eval('('+function(){
         console[fn] = function(){
             old && old.apply(console, arguments)
             _csconsolemessages.push([].slice.call(arguments).map(function(x){
-                alert('pushing'+x)
                 return JSON.stringify(x, null, 2)
             }).join('\n'))
         }
