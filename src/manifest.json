@@ -1,12 +1,12 @@
 {
-	"name": "CoffeeConsole",
+	"name": "CConsole",
 	"version": "0.0.1",
 	"description": "A CoffeeScript console within the Web Inspector.",
 	"devtools_page": "coffee.html",
     "icons": { "128": "128.png" },
-	"minimum_chrome_version" : "18",
+	"minimum_chrome_version" : "16",
 	"permissions": [
 		"tabs",
-		"contextMenus" 
+		"contextMenus"
 	]
 }

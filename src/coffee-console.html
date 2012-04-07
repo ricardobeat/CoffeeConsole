@@ -1,55 +1,227 @@
 <!doctype html>
 <html lang="en">
 <head>
-	<meta charset="UTF-8">
+	<meta charset="UTF-8" />
 	<title></title>
-    <script src="jquery-1.7.1.min.js"></script>
     <script src="coffee-script.js"></script>
     <style>
-        #cc-editor {
-            position:fixed;
-            top: 0;
-            bottom:0;
-            right:0;
-            left: 0;
-            z-index: 1;
-            background-color:#EEE;
+        html, body {
+            min-width:100%;
+            padding:0;
+            margin:0;
         }
-        #runcc {
+        input, pre {
+            margin:0;
+            display:block;
+            box-sizing:border-box;
+            padding:2px 2px 2px 20px;
+            width:100%;
+            line-height:15px !important;
+            font-size:11px;
+            font-family: Menlo, Consolas, Lucida Console, Dejavu Sans Mono, monospace;
+        }
+        input {
+            border:0;
+            color:#44f;
+            outline:0;
+            background:url(arrows.png) no-repeat 10px 0;
+        }
+        input.active {
+            background-position:10px -16px;
+            color:#222;
+        }
+        input.error {
+            background-position:10px -32px;
+            color:#a22;
+        }
+        pre {
+            padding:1px 1px 1px 0;
+            margin-left:20px;
+            color:#44c;
+            border-bottom:1px solid rgba(0,0,0,.06);
+        }
+        pre.error {
+            color:red;
+            font-style:italic;
+        }
+        pre.null {
+            color:#888;
+        }
+        pre.console {
+            color:#00e;
+        }
+        body:after {
+            content:url(128.png);
             position:fixed;
-            right:10px;
-            bottom: 10px;
-            z-index: 2;
+            top:50%;
+            left:50%;
+            opacity:0.1;
+            pointer-events:none;
+            z-index:-1;
+            margin:-64px 0 0 -64px;
         }
     </style>
 </head>
 <body>
-    <div id="cc-editor"></div>
-    <div id="cc-results"></div>
-    <div id="error"></div>
-    <button id="runcc">Run</button>
-
-<script src="ace/ace-noconflict.js" type="text/javascript" charset="utf-8"></script>
-<script src="ace/mode-coffee-noconflict.js" type="text/javascript" charset="utf-8"></script>
-<script src="ace/theme-twilight-noconflict.js" type="text/javascript" charset="utf-8"></script>
+    <input class="active" />
 <script>
+(function(){
 
-var editor = ace.edit("cc-editor");
-editor.setTheme("ace/theme/twilight");
-editor.getSession().setMode("ace/mode/coffee");
-editor.setShowPrintMargin(false);
+var commandHistory = []
+  , historyPosition = 0
 
-$(document.body).keydown(function(e){
-    if (e.which == 13 && (e.metaKey || e.shiftKey)) {
-        e.preventDefault();
-        compileIt();
-    } 
-})
-$('#runcc').click(compileIt);
-function compileIt(){
-    var compiledSource = CoffeeScript.compile( editor.getSession().getValue(), {bare:true})
-    chrome.devtools.inspectedWindow.eval( compiledSource, function(result, isException) { });
+function output(data, isError) {
+
+    var output = document.createElement('pre')
+      , newInput = document.createElement('input')
+      , messages, result
+
+    if (!(data instanceof Array)){
+        result = data
+        messages = []
+    } else {
+        messages = data[0]
+        result = data[1]
+    }
+
+    output.innerText = JSON.stringify(result, null, 2)
+
+    if (isError){
+        output.className = 'error'
+    }
+    if (/^(undefined|null)$/.test(result)){
+        output.className = 'null'
+    }
+
+    newInput.className = 'active'
+
+    document.body.appendChild(output)
+
+    for (var i=0; messages[i]; i++){
+        var c_output = document.createElement('pre')
+        c_output.className = 'console'
+        c_output.innerText = messages[i]
+        document.body.appendChild(c_output)
+    }
+
+    document.body.appendChild(newInput)
+    newInput.focus()
 }
+
+function disableInput(el) {
+    el.disabled = true
+    el.className = ''
+}
+
+// console capturing
+// ## very crude ##
+chrome.devtools.inspectedWindow.eval('('+function(){
+    if (window._csconsolemessages) return
+    window._csconsolemessages = []
+    ;['log', 'warn', 'error', 'dir', 'info'].forEach(function(fn){
+        var old = console[fn]
+        console[fn] = function(){
+            old && old.apply(console, arguments)
+            _csconsolemessages.push([].slice.call(arguments).map(function(x){
+                alert('pushing'+x)
+                return JSON.stringify(x, null, 2)
+            }).join('\n'))
+        }
+    })
+}+')()', function(){})
+
+function cleanUp(str){
+    return (str
+        .replace(/"/g, '\\"')
+        .replace(/[\n\r]+/g, ' ')
+    )
+}
+
+function captureConsole(code){
+    var captureFn = function(){
+
+        try {
+
+            var r = eval("##CODE##")
+
+            // get console messages and clear
+            messages = _csconsolemessages.slice(0)
+            window._csconsolemessages = []
+
+            return [messages, r]
+        } catch(err) {
+            return [[], 'here'+err.message]
+        }
+    }
+    return '(' + captureFn.toString().replace('##CODE##', cleanUp(code)) + ')()'
+}
+
+// input
+document.addEventListener('keyup', function(e){
+    var input, source, compiledSource
+
+    if (e.target.tagName !== 'INPUT') return
+
+    input  = e.target
+    source = e.target.value
+
+    // key up/down
+    if (e.which == 38 || e.which == 40){
+        historyPosition += e.which == 38 ? 1 : -1
+        var cmd = commandHistory[commandHistory.length - historyPosition]
+        if (cmd !== undefined && cmd !== ''){
+            source = input.value = cmd
+        }
+    } else {
+        historyPosition = 0
+    }
+
+
+    try {
+        compiledSource = CoffeeScript.compile(source, { bare: true })
+    } catch (err) {
+        input.className = 'error'
+        return
+    }
+
+    if (compiledSource == undefined || compiledSource === ''){
+        input.className = 'error'
+        return
+    } else {
+        var result
+        input.className = 'active'
+        if (e.which == 13 && source !== '' && !input.done){
+            input.done = true
+            disableInput(input)
+            commandHistory.push(source)
+            if (/console\.\w/.test(source)){
+                compiledSource = captureConsole(compiledSource)
+            }
+            chrome.devtools.inspectedWindow.eval(compiledSource, output)
+        }
+    }
+
+}, false)
+
+// prevent arrow keys acting as home/end
+document.addEventListener('keydown', function(e){
+    if (e.target.tagName === 'INPUT' && (e.which == 38 || e.which == 40)){
+        e.preventDefault()
+    }
+})
+
+function setFocus(){
+    var inputs = document.querySelectorAll('input')
+    setTimeout(function(){
+        inputs[inputs.length-1].focus()
+    }, 0)
+}
+
+setFocus()
+document.addEventListener('mouseup', setFocus)
+window.addEventListener('focus', setFocus)
+
+})()
 </script>
 
 </body>
